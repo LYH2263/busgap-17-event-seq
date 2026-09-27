@@ -181,3 +181,5 @@ th { color: var(--bg-dim); font-weight: 600; font-size: 0.78rem; }
   position: absolute; top: 8px; width: 10px; height: 32px;
   border-radius: 2px; transform: translateX(-50%);
 }
+.bg-trip-link { color: var(--bg-cyan); text-decoration: underline; cursor: pointer; }
+.bg-trip-link:hover { color: #7fe0ff; }

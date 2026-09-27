@@ -14,18 +14,24 @@ def list_reports(db: Session = Depends(get_db)):
     return [{"id": r.id, "line_id": r.line_id, "stop_name": r.stop_name,
              "created_at": r.created_at.isoformat(), "events": json.loads(r.summary_json)} for r in rows]
 
+def _collect_events(line: Line, stop_name: str | None, db: Session) -> list[dict]:
+    """试算间隔事件：只读到站表计算，不写库。事件字段与到站表对齐（站序/车辆号）。"""
+    trips = db.scalars(select(Trip).where(Trip.line_id == line.id)).all()
+    trip_ids = [t.id for t in trips]
+    trip_map = {t.id: t for t in trips}
+    arrivals = db.scalars(select(Arrival).where(Arrival.trip_id.in_(trip_ids))).all()
+    payload = [{"stop_name": a.stop_name, "stop_seq": a.stop_seq,
+                "trip_no": trip_map[a.trip_id].trip_no, "vehicle_no": trip_map[a.trip_id].vehicle_no,
+                "actual_arrive": a.actual_arrive}
+               for a in arrivals if stop_name is None or a.stop_name == stop_name]
+    events = detect_bunching(payload, line.planned_headway_min, line.bunch_threshold, line.large_threshold)
+    return events_to_dicts(events)
+
 @router.post("/run")
 def run_detection(line_id: int, stop_name: str | None = None, db: Session = Depends(get_db)):
     line = db.get(Line, line_id)
     if not line: raise HTTPException(404, "线路不存在")
-    trips = db.scalars(select(Trip).where(Trip.line_id == line_id)).all()
-    trip_ids = [t.id for t in trips]
-    trip_no_map = {t.id: t.trip_no for t in trips}
-    arrivals = db.scalars(select(Arrival).where(Arrival.trip_id.in_(trip_ids))).all()
-    payload = [{"stop_name": a.stop_name, "trip_no": trip_no_map[a.trip_id], "actual_arrive": a.actual_arrive}
-               for a in arrivals if stop_name is None or a.stop_name == stop_name]
-    events = detect_bunching(payload, line.planned_headway_min, line.bunch_threshold, line.large_threshold)
-    data = events_to_dicts(events)
+    data = _collect_events(line, stop_name, db)
     report = BunchReport(line_id=line_id, stop_name=stop_name or "*", created_at=datetime.utcnow(),
                          summary_json=json.dumps(data, ensure_ascii=False))
     db.add(report); db.commit(); db.refresh(report)
@@ -33,8 +39,10 @@ def run_detection(line_id: int, stop_name: str | None = None, db: Session = Depe
 
 @router.get("/suggestions")
 def suggestions(line_id: int, db: Session = Depends(get_db)):
-    result = run_detection(line_id=line_id, stop_name=None, db=db)
-    return {"line_id": line_id, "suggestions": [e for e in result["events"] if e["status"] != "normal"]}
+    line = db.get(Line, line_id)
+    if not line: raise HTTPException(404, "线路不存在")
+    data = _collect_events(line, None, db)
+    return {"line_id": line_id, "suggestions": [e for e in data if e["status"] != "normal"]}
 
 @router.get("/timeline")
 def timeline(line_id: int, stop_name: str = "市民中心", db: Session = Depends(get_db)):

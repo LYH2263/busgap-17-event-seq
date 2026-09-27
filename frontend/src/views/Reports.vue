@@ -43,11 +43,17 @@ function label(s: string) {
         class="bg-gap-strip"
         :class="stripClass(e.status)"
       >
-        <header>{{ e.stop_name }}</header>
+        <header>{{ e.stop_name }} · 站序 {{ e.stop_seq }}</header>
         <div class="bg-gap-body">
           <div class="bg-gap-val">{{ e.gap_min }}′</div>
           <div>计划 {{ e.planned_headway_min }}′</div>
-          <div>{{ e.earlier_trip }} → {{ e.later_trip }}</div>
+          <div>
+            <router-link class="bg-trip-link" to="/trips">{{ e.earlier_trip }}</router-link>
+            <span class="bg-trip-meta">（{{ e.earlier_vehicle }}）</span>
+            →
+            {{ e.later_trip }}
+            <span class="bg-trip-meta">（{{ e.later_vehicle }}）</span>
+          </div>
           <span class="badge" :class="e.status === 'bunching' ? 'badge-bad' : e.status === 'large_gap' ? 'badge-warn' : 'badge-ok'">
             {{ label(e.status) }}
           </span>
