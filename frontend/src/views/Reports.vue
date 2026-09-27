@@ -12,7 +12,9 @@ async function run() {
 }
 onMounted(async () => {
   trips.value = await api('/trips')
-  await run()
+  const reports = await api('/reports')
+  if (reports.length) events.value = reports[0].events
+  else await run()
 })
 function stripClass(s: string) {
   return s === 'bunching' ? 'bg-bunch' : s === 'large_gap' ? 'bg-large' : ''
@@ -23,7 +25,7 @@ function label(s: string) {
 </script>
 <template>
   <h1>串车报告</h1>
-  <p class="sub">按实际到站间隔对照计划发车间隔 · 竖直条带展示</p>
+  <p class="sub">按实际到站间隔对照计划发车间隔 · 竖直条带展示 · 点击前班班次号查看该班到站</p>
   <button class="btn" :disabled="loading" @click="run">重新检测</button>
   <div class="bg-split" style="margin-top:1rem">
     <aside class="bg-trip-col">
@@ -43,16 +45,21 @@ function label(s: string) {
         class="bg-gap-strip"
         :class="stripClass(e.status)"
       >
-        <header>{{ e.stop_name }}</header>
+        <header>{{ e.stop_name }} <span class="bg-trip-meta">站序 {{ e.stop_seq }}</span></header>
         <div class="bg-gap-body">
           <div class="bg-gap-val">{{ e.gap_min }}′</div>
           <div>计划 {{ e.planned_headway_min }}′</div>
-          <div>{{ e.earlier_trip }} → {{ e.later_trip }}</div>
+          <div>
+            <RouterLink class="bg-trip-link" :to="{ path: '/arrivals', query: { trip_no: e.earlier_trip } }">{{ e.earlier_trip }}</RouterLink>
+            <span class="bg-trip-meta"> {{ e.earlier_vehicle }}</span>
+            → {{ e.later_trip }} <span class="bg-trip-meta">{{ e.later_vehicle }}</span>
+          </div>
           <span class="badge" :class="e.status === 'bunching' ? 'badge-bad' : e.status === 'large_gap' ? 'badge-warn' : 'badge-ok'">
             {{ label(e.status) }}
           </span>
         </div>
       </article>
+      <p v-if="!events.length" class="muted">暂无间隔事件</p>
     </div>
   </div>
 </template>

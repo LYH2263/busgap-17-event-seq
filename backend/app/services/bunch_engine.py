@@ -6,8 +6,11 @@ from datetime import datetime
 @dataclass
 class GapEvent:
     stop_name: str
+    stop_seq: int
     earlier_trip: str
+    earlier_vehicle: str
     later_trip: str
+    later_vehicle: str
     gap_min: float
     planned_headway_min: float
     status: str
@@ -31,7 +34,23 @@ def detect_bunching(arrivals: list[dict], planned_headway_min: float, bunch_thre
             prev, cur = items[i - 1], items[i]
             gap_min = (cur["actual_arrive"] - prev["actual_arrive"]).total_seconds() / 60.0
             status, suggestion = classify_gap(gap_min, planned_headway_min, bunch_threshold, large_threshold)
-            events.append(GapEvent(stop, prev["trip_no"], cur["trip_no"], round(gap_min, 2), planned_headway_min, status, suggestion))
+            stop_seq = cur.get("stop_seq")
+            if stop_seq is None:
+                stop_seq = prev.get("stop_seq", 0)
+            events.append(GapEvent(
+                stop_name=stop,
+                stop_seq=stop_seq,
+                earlier_trip=prev["trip_no"],
+                earlier_vehicle=prev.get("vehicle_no", ""),
+                later_trip=cur["trip_no"],
+                later_vehicle=cur.get("vehicle_no", ""),
+                gap_min=round(gap_min, 2),
+                planned_headway_min=planned_headway_min,
+                status=status,
+                suggestion=suggestion,
+            ))
+    # 与到站表站序对齐：按站序稳定排序，同站内保持时间先后
+    events.sort(key=lambda e: e.stop_seq)
     return events
 
 def events_to_dicts(events: list[GapEvent]) -> list[dict]:

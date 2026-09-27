@@ -6,7 +6,7 @@ const events = ref<any[]>([])
 onMounted(async () => {
   trips.value = await api('/trips')
   try {
-    events.value = (await api('/reports/run?line_id=1', { method: 'POST' })).events || []
+    events.value = (await api('/reports/run?line_id=1&dry_run=true', { method: 'POST' })).events || []
   } catch { events.value = [] }
 })
 function stripClass(s: string) {

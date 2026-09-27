@@ -15,25 +15,30 @@ def list_reports(db: Session = Depends(get_db)):
              "created_at": r.created_at.isoformat(), "events": json.loads(r.summary_json)} for r in rows]
 
 @router.post("/run")
-def run_detection(line_id: int, stop_name: str | None = None, db: Session = Depends(get_db)):
+def run_detection(line_id: int, stop_name: str | None = None, dry_run: bool = False, db: Session = Depends(get_db)):
     line = db.get(Line, line_id)
     if not line: raise HTTPException(404, "线路不存在")
     trips = db.scalars(select(Trip).where(Trip.line_id == line_id)).all()
     trip_ids = [t.id for t in trips]
-    trip_no_map = {t.id: t.trip_no for t in trips}
+    trip_map = {t.id: t for t in trips}
     arrivals = db.scalars(select(Arrival).where(Arrival.trip_id.in_(trip_ids))).all()
-    payload = [{"stop_name": a.stop_name, "trip_no": trip_no_map[a.trip_id], "actual_arrive": a.actual_arrive}
+    payload = [{"stop_name": a.stop_name, "stop_seq": a.stop_seq,
+                "trip_no": trip_map[a.trip_id].trip_no, "vehicle_no": trip_map[a.trip_id].vehicle_no,
+                "actual_arrive": a.actual_arrive}
                for a in arrivals if stop_name is None or a.stop_name == stop_name]
     events = detect_bunching(payload, line.planned_headway_min, line.bunch_threshold, line.large_threshold)
     data = events_to_dicts(events)
+    # 试算不写库；只有正式检测成功才落报告
+    if dry_run:
+        return {"id": None, "dry_run": True, "events": data}
     report = BunchReport(line_id=line_id, stop_name=stop_name or "*", created_at=datetime.utcnow(),
                          summary_json=json.dumps(data, ensure_ascii=False))
     db.add(report); db.commit(); db.refresh(report)
-    return {"id": report.id, "events": data}
+    return {"id": report.id, "dry_run": False, "events": data}
 
 @router.get("/suggestions")
 def suggestions(line_id: int, db: Session = Depends(get_db)):
-    result = run_detection(line_id=line_id, stop_name=None, db=db)
+    result = run_detection(line_id=line_id, stop_name=None, dry_run=True, db=db)
     return {"line_id": line_id, "suggestions": [e for e in result["events"] if e["status"] != "normal"]}
 
 @router.get("/timeline")
